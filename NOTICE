@@ -1,0 +1,29 @@
+ReMuse 溯游
+Copyright 2026 The ReMuse Authors
+
+本产品以 Apache License 2.0 发布，见 LICENSE 文件。
+
+本项目的分发形态（Docker 镜像）中包含以下第三方组件，特此声明归属：
+
+====================================================================
+
+PostgreSQL 16
+- 来源：Docker Hub 官方镜像 postgres:16（经 pgvector/pgvector:pg16 引入）
+- 版权：Portions Copyright (c) 1996-2026, PostgreSQL Global Development Group；
+  Portions Copyright (c) 1994, The Regents of the University of California
+- 许可证：PostgreSQL License（https://www.postgresql.org/about/licence/）
+
+pgvector
+- 来源：基础镜像 pgvector/pgvector:pg16（db/Dockerfile）
+- 版权：Portions Copyright (c) 1996-2026, PostgreSQL Global Development Group
+- 许可证：PostgreSQL License（https://github.com/pgvector/pgvector）
+
+zhparser（固定于 commit 2e995c4df672563992b4d7a147b8fa2d0d4cda6c）
+- 来源：https://github.com/amutu/zhparser（db/Dockerfile 编译安装）
+- 版权：Portions Copyright (c) 2012-2013, Jov (amutu@amutu.com)
+- 许可证：PostgreSQL 风格许可证（见源码包 COPYRIGHT 文件）
+
+SCWS 1.2.3（Simple Chinese Word Segmentation）
+- 来源：https://www.xunsearch.com/scws/（db/Dockerfile 编译安装，zhparser 依赖）
+- 版权：Copyright (C) 2007-2013 hightman. All rights reserved.
+- 许可证：BSD 3-Clause（见源码包 COPYING 文件）

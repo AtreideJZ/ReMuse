@@ -1,0 +1,221 @@
+@import "tailwindcss";
+
+/*
+ * 语义色 token：全站统一从这里取色（靛蓝主色）。
+ * 双层变量结构：@theme 的 --color-* 一律指向可变的 --c-*，使工具类支持运行时主题切换；
+ * --c-* 的实际取值由主题决定 —— :root 为浅色（默认），[data-theme="dark"] 为手动深色，
+ * 系统深色且未显式选择浅色时同样应用深色（见文件底部媒体查询）。
+ */
+@theme {
+  /* 页面背景 / 正文 */
+  --color-background: var(--c-background);
+  --color-foreground: var(--c-foreground);
+
+  /* 表面 / 填充 / 边框 */
+  --color-surface: var(--c-surface);
+  --color-fill: var(--c-fill);
+  --color-fill-hover: var(--c-fill-hover);
+  --color-fill-soft: var(--c-fill-soft);
+  --color-border: var(--c-border);
+  --color-border-soft: var(--c-border-soft);
+  --color-border-strong: var(--c-border-strong);
+
+  /* 文字 */
+  --color-ink: var(--c-ink);
+  --color-ink-strong: var(--c-ink-strong);
+  --color-ink-secondary: var(--c-ink-secondary);
+  --color-ink-muted: var(--c-ink-muted);
+  --color-ink-faint: var(--c-ink-faint);
+
+  /* 主色（靛蓝） */
+  --color-primary: var(--c-primary);
+  --color-primary-hover: var(--c-primary-hover);
+  --color-primary-soft: var(--c-primary-soft);
+  --color-primary-soft-hover: var(--c-primary-soft-hover);
+  --color-primary-border: var(--c-primary-border);
+  --color-primary-pulse: var(--c-primary-pulse);
+  --color-primary-faint: var(--c-primary-faint);
+  --color-primary-onsoft: var(--c-primary-onsoft);
+
+  /* 状态色 */
+  --color-error: var(--c-error);
+  --color-error-strong: var(--c-error-strong);
+  --color-error-soft: var(--c-error-soft);
+  --color-error-muted: var(--c-error-muted);
+  --color-error-border: var(--c-error-border);
+  --color-error-border-strong: var(--c-error-border-strong);
+  --color-warning: var(--c-warning);
+  --color-warning-strong: var(--c-warning-strong);
+  --color-warning-soft: var(--c-warning-soft);
+  --color-warning-border: var(--c-warning-border);
+  --color-success: var(--c-success);
+  --color-success-soft: var(--c-success-soft);
+}
+
+/* 浅色（默认） */
+:root {
+  color-scheme: light;
+
+  --c-background: #ffffff;
+  --c-foreground: #1f2937;
+
+  /* 表面 / 填充 / 边框 */
+  --c-surface: #ffffff;
+  --c-fill: #f3f4f6;
+  --c-fill-hover: #e5e7eb;
+  --c-fill-soft: #f9fafb;
+  --c-border: #e5e7eb;
+  --c-border-soft: #f3f4f6;
+  --c-border-strong: #d1d5db;
+
+  /* 文字 */
+  --c-ink: #1f2937;
+  --c-ink-strong: #111827;
+  --c-ink-secondary: #4b5563;
+  --c-ink-muted: #6b7280;
+  --c-ink-faint: #9ca3af;
+
+  /* 主色（靛蓝） */
+  --c-primary: #4f46e5;
+  --c-primary-hover: #4338ca;
+  --c-primary-soft: #eef2ff;
+  --c-primary-soft-hover: #e0e7ff;
+  --c-primary-border: #a5b4fc;
+  --c-primary-pulse: #6366f1;
+  --c-primary-faint: #818cf8;
+  --c-primary-onsoft: #c7d2fe;
+
+  /* 状态色 */
+  --c-error: #dc2626;
+  --c-error-strong: #b91c1c;
+  --c-error-soft: #fef2f2;
+  --c-error-muted: #fee2e2;
+  --c-error-border: #fecaca;
+  --c-error-border-strong: #fca5a5;
+  --c-warning: #b45309;
+  --c-warning-strong: #92400e;
+  --c-warning-soft: #fffbeb;
+  --c-warning-border: #fde68a;
+  --c-success: #047857;
+  --c-success-soft: #ecfdf5;
+}
+
+/*
+ * 深色取值：手动深色（[data-theme="dark"]）与跟随系统（底部媒体查询）共用，
+ * 两处必须同步修改。
+ * 设计要点：中性色反转为近黑底 + 浅灰字；主色由 indigo-600 提亮为 indigo-400
+ * 以保证深色表面上的文字对比度；soft 系（徽章/卡片底）改为对应色相的深底色，
+ * 状态色统一提亮一档（red/amber/emerald-400），strong 文字用 300 档。
+ */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --c-background: #0f1115;
+  --c-foreground: #e5e7eb;
+
+  /* 表面 / 填充 / 边框 */
+  --c-surface: #17181c;
+  --c-fill: #232529;
+  --c-fill-hover: #2e3138;
+  --c-fill-soft: #1d1f24;
+  --c-border: #2a2d34;
+  --c-border-soft: #212329;
+  --c-border-strong: #3a3e47;
+
+  /* 文字 */
+  --c-ink: #dfe3e9;
+  --c-ink-strong: #f3f4f6;
+  --c-ink-secondary: #c3c7cf;
+  --c-ink-muted: #9aa0ab;
+  --c-ink-faint: #828898;
+
+  /* 主色（靛蓝，提亮） */
+  --c-primary: #818cf8;
+  --c-primary-hover: #a5b4fc;
+  --c-primary-soft: #272a4a;
+  --c-primary-soft-hover: #32365e;
+  --c-primary-border: #4c51a6;
+  --c-primary-pulse: #818cf8;
+  --c-primary-faint: #a5b4fc;
+  --c-primary-onsoft: #312e81;
+
+  /* 状态色 */
+  --c-error: #f87171;
+  --c-error-strong: #fca5a5;
+  --c-error-soft: #2d1518;
+  --c-error-muted: #451c21;
+  --c-error-border: #5f2429;
+  --c-error-border-strong: #8a3438;
+  --c-warning: #fbbf24;
+  --c-warning-strong: #fcd34d;
+  --c-warning-soft: #2f2410;
+  --c-warning-border: #57401a;
+  --c-success: #34d399;
+  --c-success-soft: #0f2e22;
+}
+
+/* 跟随系统：系统深色且未显式选择浅色时应用深色取值（与上方 [data-theme="dark"] 保持一致） */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --c-background: #0f1115;
+    --c-foreground: #e5e7eb;
+
+    /* 表面 / 填充 / 边框 */
+    --c-surface: #17181c;
+    --c-fill: #232529;
+    --c-fill-hover: #2e3138;
+    --c-fill-soft: #1d1f24;
+    --c-border: #2a2d34;
+    --c-border-soft: #212329;
+    --c-border-strong: #3a3e47;
+
+    /* 文字 */
+    --c-ink: #dfe3e9;
+    --c-ink-strong: #f3f4f6;
+    --c-ink-secondary: #c3c7cf;
+    --c-ink-muted: #9aa0ab;
+    --c-ink-faint: #828898;
+
+    /* 主色（靛蓝，提亮） */
+    --c-primary: #818cf8;
+    --c-primary-hover: #a5b4fc;
+    --c-primary-soft: #272a4a;
+    --c-primary-soft-hover: #32365e;
+    --c-primary-border: #4c51a6;
+    --c-primary-pulse: #818cf8;
+    --c-primary-faint: #a5b4fc;
+    --c-primary-onsoft: #312e81;
+
+    /* 状态色 */
+    --c-error: #f87171;
+    --c-error-strong: #fca5a5;
+    --c-error-soft: #2d1518;
+    --c-error-muted: #451c21;
+    --c-error-border: #5f2429;
+    --c-error-border-strong: #8a3438;
+    --c-warning: #fbbf24;
+    --c-warning-strong: #fcd34d;
+    --c-warning-soft: #2f2410;
+    --c-warning-border: #57401a;
+    --c-success: #34d399;
+    --c-success-soft: #0f2e22;
+  }
+}
+
+body {
+  background: var(--c-background);
+  color: var(--c-foreground);
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", sans-serif;
+}
+
+/* 尊重「减弱动态效果」偏好：禁用脉冲等循环动画 */
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse {
+    animation: none;
+  }
+}

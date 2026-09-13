@@ -1,0 +1,84 @@
+name: remuse
+
+services:
+  db:
+    build: ./db
+    image: remuse-db:latest
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-flash}
+      # 强制显式配置，杜绝默认弱口令进入部署（C2）
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 设置高强度 POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-flash}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # 仅绑定回环：本地开发/测试可连，公网不可达（C2）
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: ./backend
+    image: remuse-api:latest
+    env_file: .env
+    environment:
+      # compose 网络内强制连 db 服务
+      DATABASE_URL: postgresql://${POSTGRES_USER:-flash}:${POSTGRES_PASSWORD:-flash}@db:5432/${POSTGRES_DB:-flash}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      # 宿主编口可配，默认 8001 避开本机常见的 8000 占用
+      - "${API_PORT:-8001}:8000"
+    healthcheck:
+      # 启动命令先跑 alembic 迁移，健康即表示 schema 就绪
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # MCP Server：Streamable HTTP（stateless），与 REST 分进程部署。
+  # stateless 模式无 session 状态，单 worker 只是个人规模下的保守选择而非必需。
+  mcp:
+    build: ./backend
+    image: remuse-api:latest
+    # 迁移由 api 服务执行；等 api 健康（迁移完成）后再启动，避免读到旧 schema
+    command: uvicorn app.mcp_server:asgi_app --host 0.0.0.0 --port 8001 --workers 1
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-flash}:${POSTGRES_PASSWORD:-flash}@db:5432/${POSTGRES_DB:-flash}
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    ports:
+      - "${MCP_PORT:-8002}:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        # rewrites 在构建期固化，必须指向 compose 网络内的 API 地址
+        API_ORIGIN: http://api:8000
+    image: remuse-web:latest
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
+    # 数据卷沿用 W1 时期创建的 flash_pgdata，项目更名后数据不迁移、不丢失
+    name: flash_pgdata

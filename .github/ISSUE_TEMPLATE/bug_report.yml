@@ -1,0 +1,57 @@
+name: Bug 报告
+description: 报告一个可复现的问题
+title: "[Bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢报告。**安全漏洞请勿在此提交**，请使用仓库 Security 页面的私密报告渠道（见 SECURITY.md）。
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+      description: 从什么状态开始，做什么操作，看到什么现象
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 部署版本
+      description: 镜像 tag 或 commit（如 v0.1.0）
+    validations:
+      required: true
+  - type: input
+    id: agent-platform
+    attributes:
+      label: Agent 平台与版本
+      description: 若问题与 Agent 接入相关（MCP 配置、连接、工具调用），必填。例如 Claude Code 2.x / Cursor 1.x。无关则填「无」
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: 部署环境
+      description: 操作系统、Docker 版本、部署方式（本地 compose / NAS / VPS / Tailscale 等）
+      placeholder: |
+        OS: 
+        Docker: 
+        部署方式: 
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志
+      description: docker compose logs api / mcp / web 的相关片段（注意脱敏，勿贴 ADMIN_TOKEN / API Key）
+      render: text

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全漏洞报告
+    url: https://github.com/OWNER/REPO/security/advisories/new
+    about: 请勿公开报告安全漏洞，使用私密渠道（见 SECURITY.md）
+  - name: Agent 接入配置
+    url: https://github.com/OWNER/REPO/blob/main/docs/MCP接入指南.md
+    about: 各 Agent 平台的 MCP 配置方法，接入问题先查这里

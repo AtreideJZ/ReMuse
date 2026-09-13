@@ -1,0 +1,26 @@
+name: 功能建议
+description: 提出一个方向或改进建议
+title: "[Feature] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提交前请先读 [CONTRIBUTING.md](../CONTRIBUTING.md) 的「方向边界」——多人协作 / 企业版 / 云托管版 / 原生 App 等方向已有明确结论，重复提出不会改变优先级。
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 使用场景
+      description: 你在做什么的时候遇到了什么问题？（先讲场景，再讲方案）
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+    validations:
+      required: true
+  - type: checkbox
+    id: willing
+    attributes:
+      label: 我愿意承担这个功能的主要开发

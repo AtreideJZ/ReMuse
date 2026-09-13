@@ -1,0 +1,20 @@
+[
+  {"query": "学生学习计划", "relevant": ["根据考试日期自动规划复习", "根据作业截止时间自动拆分每天的学习任务"]},
+  {"query": "pgvector", "relevant": ["pgvector 的 IVFFlat"]},
+  {"query": "跨 session 记忆", "relevant": ["跨 session 的长期记忆层", "Agent 对话自动提炼成决策日志"]},
+  {"query": "复习备考", "relevant": ["根据考试日期自动规划复习", "Anki 卡片", "考试周自动屏蔽娱乐 App"]},
+  {"query": "向量检索", "relevant": ["pgvector 的 IVFFlat", "RRF 融合 BM25 和向量检索", "bge 中文向量模型"]},
+  {"query": "MCP 安全", "relevant": ["MCP Server 的权限设计", "Prompt Injection 防御"]},
+  {"query": "语音输入", "relevant": ["语音一句话记账", "睡前语音记录想法"]},
+  {"query": "效率工具", "relevant": ["拒绝无效会议的日历助手", "每周日晚上自动生成下周三件最重要的事"]},
+  {"query": "课程表", "relevant": ["课程表拍照自动识别", "图书馆座位占用预测"]},
+  {"query": "写文章选题", "relevant": ["灵感复用率这个概念", "写一篇对比", "复盘做成 newsletter"]},
+  {"query": "待办清单", "relevant": ["睡前语音记录想法，早上生成待办清单", "每周日晚上自动生成下周三件最重要的事"]},
+  {"query": "隐私保护", "relevant": ["隐私场景不用出域", "Prompt Injection 防御"]},
+  {"query": "读书笔记", "relevant": ["读书笔记自动关联", "微信读书划线"]},
+  {"query": "考试", "relevant": ["根据考试日期自动规划复习", "考试周自动屏蔽娱乐 App", "Anki 卡片"]},
+  {"query": "团队配合", "relevant": ["小组作业协作"]},
+  {"query": "Agent 工具调用", "relevant": ["Agent 调用工具前先查历史成功率", "跨 session 的长期记忆层"]},
+  {"query": "老人用手机", "relevant": ["给父母用的语音问答"]},
+  {"query": "整理截图", "relevant": ["整理手机截图里的灵感"]}
+]

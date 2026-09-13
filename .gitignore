@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+
+# Node
+node_modules/
+.next/
+
+# Env / secrets
+.env
+
+# Backups
+backups/
+
+# 内部材料 —— 规划/方案/调研、商业化文档、内部记忆（白名单原则：默认不公开）
+internal/
+.claude/
+.workbuddy/
+
+# OS
+.DS_Store
+Thumbs.db

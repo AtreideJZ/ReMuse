@@ -1,0 +1,10 @@
+# 运行时依赖（锁定到已验证版本；升级需人工跑全量测试后更新）
+fastapi==0.141.1
+uvicorn==0.52.0
+asyncpg==0.31.0
+pydantic==2.13.4
+pydantic-settings==2.14.2
+httpx==0.28.1
+alembic==1.18.5
+sqlalchemy==2.0.51
+mcp==1.29.0
