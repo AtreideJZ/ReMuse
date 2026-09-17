@@ -122,14 +122,16 @@ Agent 平台接入方法见 `docs/MCP接入指南.md`。方向边界（明确不
     │   ├── keys/page.tsx     # API Key 管理（弹窗含焦点陷阱）
     │   ├── logs/page.tsx     # Agent 调用日志 + 复用统计卡 + 复用标注
     │   ├── settings/page.tsx # 设置（外观主题切换 + 密钥/日志/导出入口）
-    │   └── ideas/[id]/page.tsx # 详情（复用档案 + 相关灵感区块）
+    │   └── ideas/[id]/page.tsx # 详情（复用档案 + 相关灵感区块 + 标为已复用 + 上一条/下一条）
     ├── public/
     │   ├── sw.js             # 手写 Service Worker（离线外壳，/api/* 永不缓存）
     │   └── icons/            # PWA 图标（backend/scripts/generate_icons.py 一次性生成）
-    ├── components/       # React 组件（含 agent-activity / theme-toggle / pwa-register；site-nav 主导航 + 移动端底部 tab bar）
+    ├── components/       # React 组件（含 agent-activity / theme-toggle / pwa-register；site-nav 主导航 + 移动端底部 tab bar + 全局离线待同步指示）
     ├── lib/
     │   ├── api.ts            # 前端 API 客户端（15s 超时 + AbortController 透传）
-    │   ├── offline-drafts.ts # 离线草稿队列（localStorage，联网自动补发）+ remuse-capture-draft 输入快照
+    │   ├── offline-drafts.ts # 离线草稿队列（localStorage，联网自动补发）+ remuse-capture-draft 输入快照 + 队列变更事件
+    │   ├── idea-list-order.ts# 列表顺序快照（sessionStorage，供详情页上一条/下一条）
+    │   ├── search-history.ts # 搜索历史（localStorage，最近 8 条）
     │   ├── types.ts          # TypeScript 类型
     │   └── time.ts           # 时间格式化工具
     ├── next.config.ts    # rewrite 配置（构建期固化，启动时校验 API_ORIGIN）

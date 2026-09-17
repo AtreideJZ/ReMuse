@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import type { Project } from "@/lib/types";
 import { formatDateTime } from "@/lib/time";
 import { ErrorBanner } from "@/components/error-banner";
 
 export default function ProjectsPage() {
+  const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -170,7 +172,29 @@ export default function ProjectsPage() {
           {projects.map((project) => (
             <div
               key={project.id}
-              className="rounded-xl border border-border bg-surface p-4"
+              // 整卡可点击进入首页按该项目筛选（T1.3）；行内编辑态下禁用跳转
+              onClick={
+                editingId === project.id
+                  ? undefined
+                  : () => router.push(`/?project=${project.id}`)
+              }
+              onKeyDown={
+                editingId === project.id
+                  ? undefined
+                  : (e) => {
+                      // 仅当焦点在卡片本体上时响应；内部按钮的 Enter 会冒泡至此，须排除
+                      if (e.key === "Enter" && e.target === e.currentTarget) {
+                        router.push(`/?project=${project.id}`);
+                      }
+                    }
+              }
+              role={editingId === project.id ? undefined : "link"}
+              tabIndex={editingId === project.id ? undefined : 0}
+              className={`rounded-xl border border-border bg-surface p-4${
+                editingId === project.id
+                  ? ""
+                  : " cursor-pointer transition-colors hover:border-primary-onsoft hover:bg-primary-soft/30"
+              }`}
             >
               {editingId === project.id ? (
                 <div
@@ -236,14 +260,20 @@ export default function ProjectsPage() {
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => startEdit(project)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startEdit(project);
+                        }}
                         className="rounded-md border border-border px-2.5 py-1 text-xs text-ink-secondary transition-colors hover:bg-fill-soft"
                       >
                         编辑
                       </button>
                       <button
                         type="button"
-                        onClick={() => void handleDelete(project)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void handleDelete(project);
+                        }}
                         className="rounded-md border border-error-border px-2.5 py-1 text-xs text-error transition-colors hover:bg-error-soft"
                       >
                         删除

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import type { Idea, Project, ReuseTrace } from "@/lib/types";
+import { readIdeaListOrder, type ListOrderEntry } from "@/lib/idea-list-order";
 import { formatDateTime, relativeTime, truncate } from "@/lib/time";
 import { ErrorBanner } from "@/components/error-banner";
 
@@ -30,6 +31,9 @@ export default function IdeaDetailPage() {
   const [accepting, setAccepting] = useState(false);
   const [suggestionDismissed, setSuggestionDismissed] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [markingUsed, setMarkingUsed] = useState(false);
+  // 列表顺序快照（T4.5）：来自列表页写入的 sessionStorage，供上一条/下一条浏览
+  const [listOrder, setListOrder] = useState<ListOrderEntry[]>([]);
   // 复用档案 / 相关灵感：与主数据并行请求、独立容错（接口不存在或失败时区块静默隐藏）。
   // 带上请求时的 id，路由参数变化时旧数据不会错显在新灵感上
   const [reuseTrace, setReuseTrace] = useState<{
@@ -84,6 +88,12 @@ export default function IdeaDetailPage() {
       cancelled = true;
     };
   }, [id]);
+
+  // 挂载时读取列表顺序快照（setState 放在异步回调里，react-hooks/set-state-in-effect）
+  useEffect(() => {
+    const timer = setTimeout(() => setListOrder(readIdeaListOrder()), 0);
+    return () => clearTimeout(timer);
+  }, []);
 
   const loadIdea = useCallback(
     async (silent = false) => {
@@ -181,6 +191,33 @@ export default function IdeaDetailPage() {
     }
   }
 
+  // T1.1：复用确认入口——复用率的分子全靠用户主动确认。used → captured 为「取消标记」
+  async function handleToggleUsed() {
+    if (!idea || markingUsed) return;
+    const next = idea.status === "used" ? "captured" : "used";
+    setMarkingUsed(true);
+    setActionError("");
+    try {
+      const updated = await api.updateIdea(idea.id, { status: next });
+      requestSeq.current += 1; // 用户操作结果优先于在途轮询响应
+      setIdea(updated);
+    } catch (e) {
+      setActionError(e instanceof ApiError ? e.message : "标记失败，请稍后重试");
+    } finally {
+      setMarkingUsed(false);
+    }
+  }
+
+  // 返回列表：优先浏览器返回以保留列表滚动位置与已加载分页（T4.5）；
+  // 直接打开详情（新标签页等无来源场景）时回首页
+  function handleBack() {
+    if (window.history.length > 1) {
+      router.back();
+    } else {
+      router.push("/");
+    }
+  }
+
   if (notFound) {
     return (
       <div className="py-16 text-center">
@@ -220,12 +257,24 @@ export default function IdeaDetailPage() {
   const related =
     relatedIdeas && relatedIdeas.id === id ? relatedIdeas.items : [];
 
+  // 上一条/下一条（T4.5）：按列表页快照顺序；当前条不在快照中（直接打开等）则整体隐藏
+  const orderIndex = listOrder.findIndex((entry) => entry.id === id);
+  const prevEntry = orderIndex > 0 ? listOrder[orderIndex - 1] : null;
+  const nextEntry =
+    orderIndex >= 0 && orderIndex < listOrder.length - 1
+      ? listOrder[orderIndex + 1]
+      : null;
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <Link href="/" className="text-sm text-primary hover:underline">
+        <button
+          type="button"
+          onClick={handleBack}
+          className="text-sm text-primary hover:underline"
+        >
           ← 返回列表
-        </Link>
+        </button>
         <button
           type="button"
           onClick={() => void handleDelete()}
@@ -249,6 +298,38 @@ export default function IdeaDetailPage() {
         <p className="whitespace-pre-wrap text-base leading-relaxed text-ink">
           {idea.raw_content}
         </p>
+      </section>
+
+      {/* 复用确认（T1.1）：复用率的分子全靠用户主动确认，入口放在读完原文的位置。
+          bg-success 配 text-success-soft：浅深两套主题下对比度均成立 */}
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface px-4 py-3">
+        {idea.status === "used" ? (
+          <>
+            <p className="text-sm font-medium text-success">已标记为「已复用」</p>
+            <button
+              type="button"
+              onClick={() => void handleToggleUsed()}
+              disabled={markingUsed}
+              className="rounded-md border border-border px-3 py-1.5 text-sm text-ink-secondary transition-colors hover:bg-fill-soft disabled:opacity-50"
+            >
+              {markingUsed ? "处理中…" : "取消标记"}
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-ink-muted">
+              这条灵感在实际项目里用上了吗？
+            </p>
+            <button
+              type="button"
+              onClick={() => void handleToggleUsed()}
+              disabled={markingUsed}
+              className="rounded-md bg-success px-3 py-1.5 text-sm font-medium text-success-soft transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              {markingUsed ? "标记中…" : "标为已复用"}
+            </button>
+          </>
+        )}
       </section>
 
       {/* 复用档案（T1.1）：从未被 Agent 检索过则不渲染，避免噪音 */}
@@ -435,6 +516,44 @@ export default function IdeaDetailPage() {
             ))}
           </ul>
         </section>
+      )}
+
+      {/* 上一条 / 下一条（T4.5）：无相邻条目时禁用；当前条不在快照中则整组隐藏 */}
+      {orderIndex >= 0 && (
+        <nav aria-label="顺序浏览" className="flex items-center justify-between gap-2 pt-1">
+          {prevEntry ? (
+            <Link
+              href={`/ideas/${prevEntry.id}`}
+              title={prevEntry.title}
+              className="max-w-[45%] truncate rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-ink-secondary transition-colors hover:bg-fill-soft"
+            >
+              ← 上一条
+            </Link>
+          ) : (
+            <span
+              aria-disabled="true"
+              className="rounded-md border border-border-soft px-3 py-1.5 text-sm text-ink-faint"
+            >
+              ← 上一条
+            </span>
+          )}
+          {nextEntry ? (
+            <Link
+              href={`/ideas/${nextEntry.id}`}
+              title={nextEntry.title}
+              className="max-w-[45%] truncate rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-ink-secondary transition-colors hover:bg-fill-soft"
+            >
+              下一条 →
+            </Link>
+          ) : (
+            <span
+              aria-disabled="true"
+              className="rounded-md border border-border-soft px-3 py-1.5 text-sm text-ink-faint"
+            >
+              下一条 →
+            </span>
+          )}
+        </nav>
       )}
     </div>
   );

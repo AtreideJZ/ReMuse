@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { DRAFTS_CHANGED_EVENT, draftCount } from "@/lib/offline-drafts";
 
 // 主导航收敛为高频日常动作 + 设置入口；密钥 / 日志 / 导出已移入 /settings
 const NAV_ITEMS = [
@@ -16,8 +18,27 @@ function isActive(pathname: string, href: string): boolean {
   return pathname.startsWith(href);
 }
 
+/** 离线待同步条数（T4.4）：挂载/联网恢复/草稿变更时刷新；0 时不占视觉空间 */
+function usePendingDraftCount(): number {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    const sync = () => setCount(draftCount());
+    // 初次读取放进异步回调（react-hooks/set-state-in-effect）
+    const timer = setTimeout(sync, 0);
+    window.addEventListener("online", sync);
+    window.addEventListener(DRAFTS_CHANGED_EVENT, sync);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("online", sync);
+      window.removeEventListener(DRAFTS_CHANGED_EVENT, sync);
+    };
+  }, []);
+  return count;
+}
+
 export function SiteNav() {
   const pathname = usePathname();
+  const pendingDrafts = usePendingDraftCount();
 
   return (
     <>
@@ -26,6 +47,14 @@ export function SiteNav() {
           <Link href="/" className="text-lg font-semibold tracking-tight text-ink-strong">
             ReMuse 溯游
           </Link>
+          {pendingDrafts > 0 && (
+            <span
+              role="status"
+              className="rounded-full bg-warning-soft px-2.5 py-1 text-xs text-warning"
+            >
+              {pendingDrafts} 条待同步
+            </span>
+          )}
           {/* 桌面端顶部导航 */}
           <nav aria-label="主导航" className="hidden items-center gap-1 sm:flex">
             {NAV_ITEMS.map((item) => {

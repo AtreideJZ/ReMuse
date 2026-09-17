@@ -31,6 +31,8 @@ export function CaptureBox({ projects, onSaved }: CaptureBoxProps) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [pendingDrafts, setPendingDrafts] = useState(0);
+  // 挂载时是否恢复过未提交草稿（控制「清空」按钮的露出）
+  const [canClearDraft, setCanClearDraft] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // 输入即存的 debounce 计时器（T2.2）
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -40,18 +42,41 @@ export function CaptureBox({ projects, onSaved }: CaptureBoxProps) {
     onSavedRef.current = onSaved;
   });
 
-  // 挂载：回填未提交草稿（优先）或 URL ?text= 预填，再按端型聚焦（T2.1 / T2.2 / T2.5）
+  // 挂载：回填未提交草稿并合并 URL ?text= 预填，预填立即落草稿，再从地址栏剥离内容参数
+  // （草稿与分享内容共存而非互斥，避免分享内容被静默丢弃：T2.1 / T2.2 / T2.5）
   // setState 统一放在异步回调里（react-hooks/set-state-in-effect）
   useEffect(() => {
     const timer = setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
       const draft = readCaptureDraft();
       const prefill = (params.get("text") ?? "").trim();
-      if (draft.trim().length > 0) {
+      const hasDraft = draft.trim().length > 0;
+      if (hasDraft && prefill.length > 0) {
+        // 两者同时存在：分享内容追加到草稿之后，并立即持久化合并结果
+        const merged = `${draft.replace(/\s+$/u, "")}\n\n${prefill}`;
+        setContent(merged);
+        writeCaptureDraft(merged);
+        setNotice("已合并上次未提交的内容与分享内容");
+        setCanClearDraft(true);
+      } else if (hasDraft) {
         setContent(draft);
         setNotice("已恢复未提交的内容");
+        setCanClearDraft(true);
       } else if (prefill.length > 0) {
         setContent(prefill);
+        // 预填与手输走同一条持久化路径：直接关页面内容也在
+        writeCaptureDraft(prefill);
+        setCanClearDraft(true);
+      }
+      if (prefill.length > 0) {
+        // 剥离 ?text=，避免用户内容留在地址栏/浏览器历史；保留 capture=1（聚焦语义需要它）
+        params.delete("text");
+        const qs = params.toString();
+        window.history.replaceState(
+          null,
+          "",
+          `${window.location.pathname}${qs ? `?${qs}` : ""}`,
+        );
       }
       // 桌面端打开即聚焦；移动端仅在 ?capture=1（PWA 快捷方式/分享/快捷指令）时聚焦，避免弹键盘遮挡
       const isDesktop = window.matchMedia("(min-width: 768px)").matches;
@@ -90,6 +115,18 @@ export function CaptureBox({ projects, onSaved }: CaptureBoxProps) {
       draftTimerRef.current = null;
     }
     clearCaptureDraft();
+  }
+
+  /** 明确丢弃恢复出来的草稿/预填内容（T2.3：替代「手动删光文字」的隐式清法） */
+  function handleClearDraft() {
+    discardCaptureDraft();
+    setContent("");
+    setNotice("");
+    setCanClearDraft(false);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.focus();
+    }
   }
 
   const canSave = content.trim().length > 0 && !saving;
@@ -146,6 +183,7 @@ export function CaptureBox({ projects, onSaved }: CaptureBoxProps) {
     try {
       const created = await api.createIdea(text, projectId || null);
       discardCaptureDraft();
+      setCanClearDraft(false);
       setContent("");
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
@@ -156,6 +194,7 @@ export function CaptureBox({ projects, onSaved }: CaptureBoxProps) {
       if (e instanceof ApiError && e.status === 0 && !e.aborted) {
         const drafts = addDraft(text, projectId || null);
         discardCaptureDraft();
+        setCanClearDraft(false);
         setPendingDrafts(drafts.length);
         setContent("");
         if (textareaRef.current) {
@@ -217,6 +256,16 @@ export function CaptureBox({ projects, onSaved }: CaptureBoxProps) {
           <span className="hidden text-xs text-ink-faint sm:inline">
             Ctrl/⌘ + Enter 保存
           </span>
+          {canClearDraft && (
+            <button
+              type="button"
+              onClick={handleClearDraft}
+              disabled={saving}
+              className="rounded-md border border-border px-2.5 py-1.5 text-xs text-ink-muted transition-colors hover:bg-fill-soft disabled:opacity-50"
+            >
+              清空
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void save()}

@@ -8,6 +8,14 @@ export interface OfflineDraft {
 
 const STORAGE_KEY = "remuse-offline-drafts";
 
+/** 草稿队列变更事件（T4.4）：全局待同步指示（site-nav）订阅它刷新计数 */
+export const DRAFTS_CHANGED_EVENT = "remuse:drafts-changed";
+
+function notifyDraftsChanged(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(DRAFTS_CHANGED_EVENT));
+}
+
 export function readDrafts(): OfflineDraft[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -29,6 +37,7 @@ export function readDrafts(): OfflineDraft[] {
 
 function writeDrafts(drafts: OfflineDraft[]): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(drafts));
+  notifyDraftsChanged();
 }
 
 export function addDraft(content: string, projectId: string | null): OfflineDraft[] {

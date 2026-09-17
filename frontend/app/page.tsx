@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { Idea, Project, TagItem } from "@/lib/types";
+import { writeIdeaListOrder } from "@/lib/idea-list-order";
 import { CaptureBox } from "@/components/capture-box";
 import { IdeaCard } from "@/components/idea-card";
 import { AgentActivity } from "@/components/agent-activity";
@@ -10,10 +11,18 @@ import { ErrorBanner } from "@/components/error-banner";
 
 const POLL_INTERVAL_MS = 4000;
 const PAGE_SIZE = 50;
-/** 后端 /api/ideas 的 limit 上限（le=200） */
-const MAX_LIMIT = 200;
 /** 「已记录 · AI 分析中」提示的停留时长 */
 const SAVED_NOTICE_MS = 4000;
+
+/** 挂载时读取 ?project=（项目卡片「查看灵感」的落点，T1.3）；无则空串 */
+function readInitialProjectFilter(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return new URLSearchParams(window.location.search).get("project") ?? "";
+  } catch {
+    return "";
+  }
+}
 
 export default function HomePage() {
   const [ideas, setIdeas] = useState<Idea[]>([]);
@@ -30,17 +39,28 @@ export default function HomePage() {
   const [lastSavedId, setLastSavedId] = useState<string | null>(null);
   // 请求序号：每次发起自增，响应落地前校验，防止旧响应覆盖新状态
   const requestSeq = useRef(0);
-  // 已加载条数的 ref 镜像：静默刷新按当前窗口取数，避免分页后刷新把列表截断回首页大小
-  const loadedCountRef = useRef(0);
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    loadedCountRef.current = ideas.length;
-  }, [ideas.length]);
   useEffect(() => {
     return () => {
       if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
     };
   }, []);
+
+  // 挂载时读取 ?project= 作为初始筛选（T1.3，项目卡片的落点）。
+  // 不用 useState 初始化函数：首页是静态预渲染，客户端初始值若与服务端 HTML
+  // 不一致会导致 hydration 不匹配；首帧后设置即可，列表 effect 会随筛选变化重取
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const initial = readInitialProjectFilter();
+      if (initial) setProjectFilter(initial);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // 列表顺序快照（T4.5）：供详情页「上一条 / 下一条」按当前列表顺序浏览
+  useEffect(() => {
+    writeIdeaListOrder(ideas);
+  }, [ideas]);
 
   // 首次加载与筛选变化时刷新列表（回到第一页；setState 只发生在异步回调里）
   useEffect(() => {
@@ -88,11 +108,21 @@ export default function HomePage() {
         const data = await api.listIdeas({
           project_id: projectFilter || undefined,
           tag: tagFilter || undefined,
-          // 覆盖当前已加载的窗口，避免分页后刷新截断列表
-          limit: Math.min(MAX_LIMIT, Math.max(PAGE_SIZE, loadedCountRef.current)),
+          limit: PAGE_SIZE,
         });
         if (seq !== requestSeq.current) return;
-        setIdeas(data.items);
+        if (silent) {
+          // 静默刷新（T3.1）：只拉第一页并与现有列表按 id 合并——新条目进头部、
+          // 已有条目用新数据覆盖（ai_status 等）、已加载的尾部原样保留，
+          // 不再整体替换导致「加载更多」的窗口被截断
+          setIdeas((prev) => {
+            const freshIds = new Set(data.items.map((item) => item.id));
+            const tail = prev.filter((item) => !freshIds.has(item.id));
+            return [...data.items, ...tail];
+          });
+        } else {
+          setIdeas(data.items);
+        }
         setTotal(data.total);
         setError("");
       } catch (e) {
@@ -145,7 +175,11 @@ export default function HomePage() {
       })
       .then((data) => {
         if (seq !== requestSeq.current) return;
-        setIdeas((prev) => [...prev, ...data.items]);
+        // 按 id 去重（T3.2）：offset 分页期间有新记录插入时窗口滑动会产生重复条目
+        setIdeas((prev) => {
+          const seen = new Set(prev.map((item) => item.id));
+          return [...prev, ...data.items.filter((item) => !seen.has(item.id))];
+        });
         setTotal(data.total);
         setLoadingMore(false);
       })
