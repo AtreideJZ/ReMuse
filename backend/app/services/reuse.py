@@ -27,7 +27,9 @@ async def mark_retrieved(ids: list[UUID]) -> None:
     )
     await pool.execute(
         "UPDATE ideas SET retrieved_count = retrieved_count + 1, "
-        "last_retrieved_at = now() "
+        "last_retrieved_at = now(), "
+        # 首次检索时间只写一次（E3 沉睡叙事的真实数据源）
+        "first_retrieved_at = COALESCE(first_retrieved_at, now()) "
         "WHERE id = ANY($1)",
         ids,
     )

@@ -76,20 +76,20 @@ Agent 平台接入方法见 `docs/MCP接入指南.md`。方向边界（明确不
 │   │   │   ├── ideas.py      # 灵感 CRUD、AI 重试（处理中 409）、相关灵感（/{id}/related）、复用档案（/{id}/reuse-trace）
 │   │   │   ├── projects.py   # 项目空间 CRUD
 │   │   │   ├── tags.py       # 标签列表
-│   │   │   ├── search.py     # Web 混合检索
+│   │   │   ├── search.py     # Web 混合检索（零结果时附无阈值向量近邻 near_miss）
 │   │   │   ├── keys.py       # API Key 管理
 │   │   │   ├── logs.py       # Agent 调用日志查询
-│   │   │   ├── stats.py      # 复用率统计（/api/stats/reuse）
+│   │   │   ├── stats.py      # 复用率统计（/api/stats/reuse，含最久待唤醒条目 oldest_captured_*）
 │   │   │   ├── export.py     # 全量数据导出（/api/export）
 │   │   │   └── agent.py      # Agent 访问接口（REST 形态，全量审计）
 │   │   └── services/     # 业务逻辑与外部服务
 │   │       ├── structuring.py  # AI 结构化（CAS 抢占+信号量）+ Embedding 回填
 │   │       ├── llm.py          # LLM 调用
 │   │       ├── embedder.py     # Embedding 抽象层
-│   │       ├── search.py       # 混合检索 SQL + 共享相关灵感查询（fetch_related_ideas）
+│   │       ├── search.py       # 混合检索 SQL + 共享相关灵感查询（fetch_related_ideas）+ 零结果近邻（fetch_near_miss）
 │   │       ├── keys.py         # Key 生成/校验/授权（guard_scope / check_project_access）
 │   │       ├── logs.py         # 调用日志写入（log_call）+ 超期清理（purge_old_logs）
-│   │       ├── reuse.py        # 复用追踪（命中记 retrieved / 确认记 used；冗余 retrieved_count/last_retrieved_at 计数列）
+│   │       ├── reuse.py        # 复用追踪（命中记 retrieved / 确认记 used；冗余 retrieved_count/last_retrieved_at/first_retrieved_at 计数列）
 │   │       ├── admin_auth.py   # 管理面认证中间件（ADMIN_TOKEN，fail-closed）
 │   │       └── ratelimit.py    # 滑动窗口限流（capture/search/export）
 │   ├── alembic/          # 手写 SQL 迁移
@@ -113,11 +113,11 @@ Agent 平台接入方法见 `docs/MCP接入指南.md`。方向边界（明确不
 │   └── Dockerfile            # 多阶段构建，非 root 运行
 └── frontend/             # Next.js 前端
     ├── app/              # App Router 页面
-    │   ├── page.tsx          # 记录页（Agent 活动流 + 乐观插入 + offset 分页）
+    │   ├── page.tsx          # 记录页（Agent 活动流 + 乐观插入 + offset 分页 + AI 完成回响）
     │   ├── layout.tsx        # 元信息 + PwaRegister + 主题防闪白内联脚本
     │   ├── manifest.ts       # PWA manifest（/manifest.webmanifest，含 shortcuts/share_target）
     │   ├── capture/page.tsx  # 分享目标接收页（query 预填 → 跳首页聚焦）
-    │   ├── search/page.tsx   # 混合检索
+    │   ├── search/page.tsx   # 混合检索（搜索历史 + 待唤醒兜底 + 零结果近邻 near_miss）
     │   ├── projects/page.tsx # 项目空间
     │   ├── keys/page.tsx     # API Key 管理（弹窗含焦点陷阱）
     │   ├── logs/page.tsx     # Agent 调用日志 + 复用统计卡 + 复用标注

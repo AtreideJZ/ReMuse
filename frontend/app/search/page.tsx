@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { api, ApiError } from "@/lib/api";
 import type { Idea, Project, TagItem } from "@/lib/types";
+import { relativeTime } from "@/lib/time";
 import {
   addSearchHistory,
   clearSearchHistory,
@@ -49,6 +51,8 @@ export default function SearchPage() {
   const [tags, setTags] = useState<TagItem[]>([]);
   // null 表示尚未搜索
   const [results, setResults] = useState<Idea[] | null>(null);
+  // E7：零结果时的无阈值向量近邻（「有点像的」），与 results 一并由搜索响应给出
+  const [nearMiss, setNearMiss] = useState<Idea | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   // 首屏兜底内容（T4.1）与搜索历史（T4.2），仅在未搜索时展示
@@ -99,7 +103,8 @@ export default function SearchPage() {
         controller.signal,
       );
       if (abortRef.current !== controller) return;
-      setResults(data);
+      setResults(data.items);
+      setNearMiss(data.near_miss);
       // 搜索成功后记入历史（去重置顶，最多 8 条）
       setHistory(addSearchHistory(filters.q));
     } catch (e) {
@@ -305,10 +310,27 @@ export default function SearchPage() {
         </div>
       ) : results.length === 0 ? (
         <div className="py-12 text-center">
-          <p className="text-sm text-ink-faint">没有找到相关灵感</p>
-          <p className="mt-2 text-xs text-ink-faint">
-            试试更宽泛的描述{projectFilter || tagFilter || days ? "，或放宽筛选条件" : ""}
-          </p>
+          <p className="text-sm text-ink-faint">没有找到「{query}」</p>
+          {/* E7：零结果时的「有点像的」——把死路变成活路；无近邻时保持原引导 */}
+          {nearMiss ? (
+            <div className="mx-auto mt-6 max-w-md space-y-3 text-left">
+              <p className="text-xs text-ink-faint">
+                不过 {relativeTime(nearMiss.created_at)}你记过一条有点像的——
+              </p>
+              <IdeaCard idea={nearMiss} />
+              <p className="text-xs text-ink-muted">
+                现在补上这条也行：
+                <Link href="/" className="ml-1 text-primary hover:underline">
+                  去记录 →
+                </Link>
+              </p>
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-ink-faint">
+              试试更宽泛的描述
+              {projectFilter || tagFilter || days ? "，或放宽筛选条件" : ""}
+            </p>
+          )}
           {(projectFilter || tagFilter || days) && (
             <button
               type="button"

@@ -5,7 +5,7 @@ import { api, ApiError } from "@/lib/api";
 import type { Idea, Project, TagItem } from "@/lib/types";
 import { writeIdeaListOrder } from "@/lib/idea-list-order";
 import { CaptureBox } from "@/components/capture-box";
-import { IdeaCard } from "@/components/idea-card";
+import { IdeaCard, type AiEcho } from "@/components/idea-card";
 import { AgentActivity } from "@/components/agent-activity";
 import { ErrorBanner } from "@/components/error-banner";
 
@@ -13,6 +13,8 @@ const POLL_INTERVAL_MS = 4000;
 const PAGE_SIZE = 50;
 /** 「已记录 · AI 分析中」提示的停留时长 */
 const SAVED_NOTICE_MS = 4000;
+/** AI 完成回响（E2）在卡片内的停留时长 */
+const ECHO_MS = 6000;
 
 /** 挂载时读取 ?project=（项目卡片「查看灵感」的落点，T1.3）；无则空串 */
 function readInitialProjectFilter(): string {
@@ -40,10 +42,43 @@ export default function HomePage() {
   // 请求序号：每次发起自增，响应落地前校验，防止旧响应覆盖新状态
   const requestSeq = useRef(0);
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // E2：AI 完成回响。仅对本次会话新建（经过 handleSaved）的条目触发，一次性；
+  // 刷新页面后历史条目不触发（sessionNewIds 随挂载重建）
+  const [aiEchoes, setAiEchoes] = useState<Record<string, AiEcho>>({});
+  const sessionNewIdsRef = useRef<Set<string>>(new Set());
+  const echoShownRef = useRef<Set<string>>(new Set());
+  const echoTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
+  // ideas 的 ref 镜像：轮询响应落地时对比 ai_status 迁移用
+  const ideasRef = useRef<Idea[]>([]);
   useEffect(() => {
+    ideasRef.current = ideas;
+  }, [ideas]);
+  useEffect(() => {
+    const echoTimers = echoTimersRef.current;
     return () => {
       if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+      for (const t of echoTimers.values()) clearTimeout(t);
     };
+  }, []);
+
+  // E2：卡内回响一次性展示，约 6 秒后自动消失（仅 done/failed 迁移瞬间调用）
+  const showEcho = useCallback((idea: Idea, kind: AiEcho["kind"]) => {
+    echoShownRef.current.add(idea.id);
+    setAiEchoes((prev) => ({
+      ...prev,
+      [idea.id]: { kind, title: idea.ai_title },
+    }));
+    const timer = setTimeout(() => {
+      setAiEchoes((prev) => {
+        const next = { ...prev };
+        delete next[idea.id];
+        return next;
+      });
+      echoTimersRef.current.delete(idea.id);
+    }, ECHO_MS);
+    echoTimersRef.current.set(idea.id, timer);
   }, []);
 
   // 挂载时读取 ?project= 作为初始筛选（T1.3，项目卡片的落点）。
@@ -111,6 +146,22 @@ export default function HomePage() {
           limit: PAGE_SIZE,
         });
         if (seq !== requestSeq.current) return;
+        // E2：检测本次会话新建条目的 AI 状态迁移（pending/processing → done/failed），
+        // 在数据到达时（事件语境）出回响，而非在 effect 里
+        const prevStatusById = new Map(
+          ideasRef.current.map((item) => [item.id, item.ai_status]),
+        );
+        for (const item of data.items) {
+          if (!sessionNewIdsRef.current.has(item.id)) continue;
+          if (echoShownRef.current.has(item.id)) continue;
+          const prev = prevStatusById.get(item.id);
+          if (
+            (prev === "pending" || prev === "processing") &&
+            (item.ai_status === "done" || item.ai_status === "failed")
+          ) {
+            showEcho(item, item.ai_status);
+          }
+        }
         if (silent) {
           // 静默刷新（T3.1）：只拉第一页并与现有列表按 id 合并——新条目进头部、
           // 已有条目用新数据覆盖（ai_status 等）、已加载的尾部原样保留，
@@ -132,7 +183,7 @@ export default function HomePage() {
         if (seq === requestSeq.current && !silent) setLoading(false);
       }
     },
-    [projectFilter, tagFilter],
+    [projectFilter, tagFilter, showEcho],
   );
 
   // T2.7：保存成功后乐观插入列表头部 + 短暂提示；loadIdeas(true) 作兜底一致性校验
@@ -141,6 +192,8 @@ export default function HomePage() {
       if (idea) {
         // 顶掉在途请求，防止旧响应覆盖刚插入的卡片
         requestSeq.current += 1;
+        // E2：登记本次会话新建条目，其 AI 状态迁移才会触发卡内回响
+        sessionNewIdsRef.current.add(idea.id);
         const matchesFilter =
           (!projectFilter || idea.project_id === projectFilter) &&
           (!tagFilter || idea.tags.includes(tagFilter));
@@ -160,6 +213,31 @@ export default function HomePage() {
     },
     [loadIdeas, projectFilter, tagFilter],
   );
+
+  // E2 失败分支：卡内重试入口。清掉回响记录，让重试后的完成再次出回响
+  async function handleRetryAI(ideaId: string) {
+    try {
+      const updated = await api.retryIdeaAI(ideaId);
+      echoShownRef.current.delete(ideaId);
+      const timer = echoTimersRef.current.get(ideaId);
+      if (timer) {
+        clearTimeout(timer);
+        echoTimersRef.current.delete(ideaId);
+      }
+      setAiEchoes((prev) => {
+        const next = { ...prev };
+        delete next[ideaId];
+        return next;
+      });
+      // 立即把 pending 状态合入列表，轮询会继续直到 done/failed
+      requestSeq.current += 1;
+      setIdeas((prev) =>
+        prev.map((item) => (item.id === updated.id ? updated : item)),
+      );
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "重试失败，请稍后再试");
+    }
+  }
 
   // T3.4：加载更多（offset 分页 + 请求序号校验，同日志页模式）
   function handleLoadMore() {
@@ -270,11 +348,29 @@ export default function HomePage() {
       {loading ? (
         <p className="py-12 text-center text-sm text-ink-faint">加载中…</p>
       ) : ideas.length === 0 ? (
-        <p className="py-12 text-center text-sm text-ink-faint">
-          {projectFilter || tagFilter
-            ? "没有符合筛选条件的灵感"
-            : "还没有灵感，写下第一条吧。"}
-        </p>
+        projectFilter || tagFilter ? (
+          <div className="py-12 text-center">
+            <p className="text-sm text-ink-faint">没有符合筛选条件的灵感</p>
+            <button
+              type="button"
+              onClick={() => {
+                setProjectFilter("");
+                setTagFilter("");
+              }}
+              className="mt-3 rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-ink-secondary transition-colors hover:bg-fill-soft"
+            >
+              清除筛选
+            </button>
+          </div>
+        ) : (
+          // E6：空态预告机制——记录与找回两个语义都在
+          <div className="py-12 text-center">
+            <p className="text-sm text-ink-secondary">还没有灵感。</p>
+            <p className="mt-1.5 text-sm text-ink-faint">
+              写下第一条——过些日子，Agent 会替你把它找回来。
+            </p>
+          </div>
+        )
       ) : (
         <div className="space-y-3">
           {ideas.map((idea) => (
@@ -284,7 +380,11 @@ export default function HomePage() {
                 idea.id === lastSavedId ? "remuse-idea-fade-in" : undefined
               }
             >
-              <IdeaCard idea={idea} />
+              <IdeaCard
+                idea={idea}
+                aiEcho={aiEchoes[idea.id]}
+                onRetryAI={(ideaId) => void handleRetryAI(ideaId)}
+              />
             </div>
           ))}
           {hasMore && (

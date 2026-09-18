@@ -15,6 +15,7 @@ import type {
   ReuseStats,
   ReuseTrace,
   SearchIdeaParams,
+  SearchIdeasResult,
   TagListResponse,
 } from "./types";
 
@@ -251,15 +252,20 @@ export const api = {
     return request<TagListResponse>("/api/tags");
   },
 
-  /** 语义搜索，返回按相关性排序的数组（无 total 包装）。可透传 signal 取消在途请求。 */
-  searchIdeas(params: SearchIdeaParams, signal?: AbortSignal): Promise<Idea[]> {
+  /** 语义搜索（E7：响应含 items + 零结果时的 near_miss）。可透传 signal 取消在途请求。 */
+  searchIdeas(
+    params: SearchIdeaParams,
+    signal?: AbortSignal,
+  ): Promise<SearchIdeasResult> {
     const q = new URLSearchParams();
     q.set("q", params.q);
     if (params.project_id) q.set("project_id", params.project_id);
     if (params.tag) q.set("tag", params.tag);
     if (params.days !== undefined) q.set("days", String(params.days));
     q.set("limit", String(params.limit ?? 20));
-    return request<Idea[]>(`/api/search/ideas?${q.toString()}`, { signal });
+    return request<SearchIdeasResult>(`/api/search/ideas?${q.toString()}`, {
+      signal,
+    });
   },
 
   listKeys(): Promise<ApiKeyListResponse> {

@@ -138,6 +138,9 @@ export interface ReuseStats {
   retrieved: number;
   captured: number;
   reuse_rate: number;
+  /** 最久待唤醒灵感（E4 统计卡观察项）；captured 为 0 或老版本 API 时缺省 */
+  oldest_captured_id?: string | null;
+  oldest_captured_at?: string | null;
 }
 
 /** 复用档案的明细事件（来自 agent_call_logs，保留期清理后 events 可能少于累计次数） */
@@ -152,5 +155,13 @@ export interface ReuseTrace {
   status: string;
   retrieved_count: number;
   last_retrieved_at: string | null;
+  /** 首次被 Agent 检索时间（E3 沉睡叙事）；老数据未回填时为 null/缺省 */
+  first_retrieved_at?: string | null;
   events: ReuseTraceEvent[];
+}
+
+/** 检索响应（E7）：零结果时 near_miss 为无阈值向量近邻 top-1 */
+export interface SearchIdeasResult {
+  items: Idea[];
+  near_miss: Idea | null;
 }

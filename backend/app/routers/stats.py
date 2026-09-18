@@ -26,6 +26,11 @@ async def reuse_stats():
         WHERE status != 'dropped'
         """
     )
+    # 最久的待唤醒灵感（E4）：统计卡的可点击观察项；captured 为 0 时为 None
+    oldest = await pool.fetchrow(
+        "SELECT id, created_at FROM ideas WHERE status = 'captured' "
+        "ORDER BY created_at ASC LIMIT 1"
+    )
     total = row["total"]
     reused = row["used"] + row["merged"]
     return {
@@ -35,4 +40,6 @@ async def reuse_stats():
         "retrieved": row["retrieved"],
         "captured": row["captured"],
         "reuse_rate": round(reused / total, 4) if total else 0.0,
+        "oldest_captured_id": str(oldest["id"]) if oldest else None,
+        "oldest_captured_at": oldest["created_at"] if oldest else None,
     }

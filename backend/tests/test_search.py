@@ -91,7 +91,7 @@ async def test_semantic_recall(seeded):
     client, _, target_id, _ = seeded
     resp = await client.get("/api/search/ideas", params={"q": "学生学习计划"})
     assert resp.status_code == 200
-    ids = [i["id"] for i in resp.json()]
+    ids = [i["id"] for i in resp.json()["items"]]
     assert str(target_id) in ids[:5], f"目标未进前 5: {ids[:5]}"
 
 
@@ -99,7 +99,7 @@ async def test_keyword_exact(seeded):
     """AC-F005-02：精确术语「pgvector」排第 1。"""
     client, _, _, kw_id = seeded
     resp = await client.get("/api/search/ideas", params={"q": "pgvector"})
-    ids = [i["id"] for i in resp.json()]
+    ids = [i["id"] for i in resp.json()["items"]]
     assert ids and ids[0] == str(kw_id)
 
 
@@ -111,7 +111,7 @@ async def test_filter_combination(seeded):
         params={"q": "规划", "project_id": str(pid), "days": 7},
     )
     assert resp.status_code == 200
-    items = resp.json()
+    items = resp.json()["items"]
     assert items, "过滤后应有结果"
     assert all(i["project_id"] == str(pid) for i in items)
 
@@ -128,7 +128,41 @@ async def test_filter_combination(seeded):
             "/api/search/ideas",
             params={"q": "规划", "project_id": str(other_pid), "days": 7},
         )
-        assert str(target_id) not in [i["id"] for i in resp.json()]
-        assert str(kw_id) not in [i["id"] for i in resp.json()]
+        result_ids = [i["id"] for i in resp.json()["items"]]
+        assert str(target_id) not in result_ids
+        assert str(kw_id) not in result_ids
     finally:
         await pool.execute("DELETE FROM projects WHERE id = $1", other_pid)
+
+
+async def test_near_miss_on_zero_result(seeded):
+    """E7：零结果（空项目过滤）时 near_miss 给出无阈值向量近邻；有结果时不出现。"""
+    client, pid, target_id, _ = seeded
+    from app.db import get_pool
+
+    pool = await get_pool()
+    empty_pid = await pool.fetchval(
+        "INSERT INTO projects (name) VALUES ($1) RETURNING id",
+        f"空项目-{uuid.uuid4().hex[:6]}",
+    )
+    try:
+        resp = await client.get(
+            "/api/search/ideas",
+            params={"q": "学生学习计划", "project_id": str(empty_pid)},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["items"] == []
+        # 库里存在带向量的灵感，无阈值近邻应命中其中之一
+        assert data["near_miss"] is not None
+        assert data["near_miss"]["id"]
+
+        # 有结果的搜索不附带 near_miss
+        resp = await client.get(
+            "/api/search/ideas", params={"q": "学生学习计划", "project_id": str(pid)}
+        )
+        data = resp.json()
+        assert data["items"]
+        assert data["near_miss"] is None
+    finally:
+        await pool.execute("DELETE FROM projects WHERE id = $1", empty_pid)

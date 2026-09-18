@@ -224,5 +224,8 @@ async def test_reuse_stats(client: AsyncClient):
         # 复用率口径：(used + merged) / total
         expected = round((data["used"] + data["merged"]) / data["total_ideas"], 4)
         assert data["reuse_rate"] == expected
+        # E4：最久待唤醒条目（库里至少有刚插入的 captured 行）
+        assert data["oldest_captured_id"] is not None
+        assert data["oldest_captured_at"] is not None
     finally:
         await pool.execute("DELETE FROM ideas WHERE id = ANY($1)", ids)

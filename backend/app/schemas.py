@@ -82,7 +82,16 @@ class ReuseTraceOut(BaseModel):
     status: IdeaStatus
     retrieved_count: int
     last_retrieved_at: datetime | None
+    # 首次被 Agent 检索时间（E3）；老数据未回填时为 None，前端退回两段式展示
+    first_retrieved_at: datetime | None = None
     events: list[ReuseTraceEvent]
+
+
+class SearchIdeaListOut(BaseModel):
+    """Web 混合检索响应（E7）：零结果时 near_miss 给出无阈值向量近邻 top-1。"""
+
+    items: list[IdeaOut]
+    near_miss: IdeaOut | None = None
 
 
 # ---------- Projects ----------

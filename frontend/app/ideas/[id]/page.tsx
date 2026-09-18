@@ -17,6 +17,17 @@ const SOURCE_LABELS: Record<Idea["source"], string> = {
   mcp: "MCP",
 };
 
+/** E1 回执副行：写下到用上之间的时间差，按跨度分档（偏冷措辞，事实陈述） */
+function reuseGapText(days: number): string {
+  if (days === 0) return "写下当天就被用上了";
+  if (days < 30) return `它在写下 ${days} 天后被用上`;
+  const months = Math.floor(days / 30);
+  if (days < 365) return `它在写下 ${months} 个月后（${days} 天）被用上`;
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  return `它在写下 ${years} 年${rest > 0 ? `零 ${rest} 个月` : ""}后被用上`;
+}
+
 export default function IdeaDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
@@ -32,6 +43,15 @@ export default function IdeaDetailPage() {
   const [suggestionDismissed, setSuggestionDismissed] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [markingUsed, setMarkingUsed] = useState(false);
+  // 复用回执（E1）：标记成功后原地展示；带 id 以便路由切换到别的灵感时不残留
+  const [receipt, setReceipt] = useState<{
+    id: string;
+    count: number | null;
+    days: number;
+  } | null>(null);
+  // AI 区完成淡入（方案 §4-③）：仅本次会话内 pending/processing → done 迁移时触发一次
+  const [aiJustDone, setAiJustDone] = useState(false);
+  const prevAiStatusRef = useRef<string | null>(null);
   // 列表顺序快照（T4.5）：来自列表页写入的 sessionStorage，供上一条/下一条浏览
   const [listOrder, setListOrder] = useState<ListOrderEntry[]>([]);
   // 复用档案 / 相关灵感：与主数据并行请求、独立容错（接口不存在或失败时区块静默隐藏）。
@@ -55,6 +75,7 @@ export default function IdeaDetailPage() {
       .getIdea(id)
       .then((data) => {
         if (cancelled || seq !== requestSeq.current) return;
+        prevAiStatusRef.current = data.ai_status;
         setIdea(data);
         setError("");
       })
@@ -101,6 +122,15 @@ export default function IdeaDetailPage() {
       try {
         const data = await api.getIdea(id);
         if (seq !== requestSeq.current) return;
+        // AI 区完成淡入：仅 pending/processing → done 的会话内迁移触发
+        const prev = prevAiStatusRef.current;
+        if (
+          (prev === "pending" || prev === "processing") &&
+          data.ai_status === "done"
+        ) {
+          setAiJustDone(true);
+        }
+        prevAiStatusRef.current = data.ai_status;
         setIdea(data);
         setError("");
       } catch (e) {
@@ -192,6 +222,8 @@ export default function IdeaDetailPage() {
   }
 
   // T1.1：复用确认入口——复用率的分子全靠用户主动确认。used → captured 为「取消标记」
+  // E1：确认成功后原地展示回执（第 N 条 + 写下到用上的时间差）；
+  // 统计接口失败时回执仍出现，只是省略数字（不能拿不到数字就没有回执）
   async function handleToggleUsed() {
     if (!idea || markingUsed) return;
     const next = idea.status === "used" ? "captured" : "used";
@@ -201,6 +233,25 @@ export default function IdeaDetailPage() {
       const updated = await api.updateIdea(idea.id, { status: next });
       requestSeq.current += 1; // 用户操作结果优先于在途轮询响应
       setIdea(updated);
+      if (next === "used") {
+        const days = Math.max(
+          0,
+          Math.floor(
+            (Date.now() - new Date(updated.created_at).getTime()) / 86400000,
+          ),
+        );
+        let count: number | null = null;
+        try {
+          const stats = await api.getReuseStats();
+          count = stats.used + stats.merged;
+        } catch {
+          // count 保持 null：回执省略「第 N 条」
+        }
+        setReceipt({ id: idea.id, count, days });
+      } else {
+        // 取消标记：回执退回按钮态
+        setReceipt(null);
+      }
     } catch (e) {
       setActionError(e instanceof ApiError ? e.message : "标记失败，请稍后重试");
     } finally {
@@ -265,8 +316,35 @@ export default function IdeaDetailPage() {
       ? listOrder[orderIndex + 1]
       : null;
 
+  // E3 沉睡叙事：首次检索距写下的天数；first_retrieved_at 缺失（老数据）时为 null
+  const sleepDays =
+    trace && trace.first_retrieved_at
+      ? Math.max(
+          0,
+          Math.floor(
+            (new Date(trace.first_retrieved_at).getTime() -
+              new Date(idea.created_at).getTime()) / 86400000,
+          ),
+        )
+      : null;
+
   return (
     <div className="space-y-5">
+      {/* E1 回执数字滚动与 AI 区完成淡入；prefers-reduced-motion 下不启用（方案 §4） */}
+      <style>{`
+        @keyframes remuse-roll-in {
+          from { transform: translateY(65%); opacity: 0; }
+          to { transform: none; opacity: 1; }
+        }
+        @keyframes remuse-fade-soft {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @media (prefers-reduced-motion: no-preference) {
+          .remuse-roll { display: inline-block; animation: remuse-roll-in 600ms cubic-bezier(.22,1,.36,1); }
+          .remuse-ai-fade { animation: remuse-fade-soft 300ms ease-out; }
+        }
+      `}</style>
       <div className="flex items-center justify-between">
         <button
           type="button"
@@ -300,53 +378,123 @@ export default function IdeaDetailPage() {
         </p>
       </section>
 
-      {/* 复用确认（T1.1）：复用率的分子全靠用户主动确认，入口放在读完原文的位置。
-          bg-success 配 text-success-soft：浅深两套主题下对比度均成立 */}
-      <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface px-4 py-3">
-        {idea.status === "used" ? (
-          <>
-            <p className="text-sm font-medium text-success">已标记为「已复用」</p>
-            <button
-              type="button"
-              onClick={() => void handleToggleUsed()}
-              disabled={markingUsed}
-              className="rounded-md border border-border px-3 py-1.5 text-sm text-ink-secondary transition-colors hover:bg-fill-soft disabled:opacity-50"
-            >
-              {markingUsed ? "处理中…" : "取消标记"}
-            </button>
-          </>
-        ) : (
-          <>
-            <p className="text-sm text-ink-muted">
-              这条灵感在实际项目里用上了吗？
-            </p>
-            <button
-              type="button"
-              onClick={() => void handleToggleUsed()}
-              disabled={markingUsed}
-              className="rounded-md bg-success px-3 py-1.5 text-sm font-medium text-success-soft transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              {markingUsed ? "标记中…" : "标为已复用"}
-            </button>
-          </>
-        )}
-      </section>
+      {/* 复用确认（T1.1 + E1）：确认成功后动作条原地变为回执（✓ + 文字，不靠颜色单独表意）；
+          取消标记或切换灵感后退回按钮态。bg-success 按钮配 text-success-soft 保证双主题对比度 */}
+      {receipt && receipt.id === id ? (
+        <section
+          role="status"
+          aria-live="polite"
+          className="flex items-start justify-between gap-3 rounded-xl border border-border bg-success-soft px-4 py-3"
+        >
+          <div className="flex items-start gap-2.5">
+            <span aria-hidden="true" className="font-bold leading-snug text-success">
+              ✓
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-success">
+                已确认复用
+                {receipt.count !== null && (
+                  <>
+                    {" · 第 "}
+                    <span className="remuse-roll">{receipt.count}</span>
+                    {" 条"}
+                  </>
+                )}
+              </p>
+              <p className="mt-0.5 text-xs text-ink-secondary">
+                {reuseGapText(receipt.days)}
+              </p>
+              {/* E9：库里第一次复用，额外标注一句（count 取自后端统计，非本地状态） */}
+              {receipt.count === 1 && (
+                <p className="mt-0.5 text-xs text-ink-secondary">
+                  这也是这个库里第一次发生。
+                </p>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleToggleUsed()}
+            disabled={markingUsed}
+            className="shrink-0 rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-ink-secondary transition-colors hover:bg-fill-soft disabled:opacity-50"
+          >
+            {markingUsed ? "处理中…" : "取消标记"}
+          </button>
+        </section>
+      ) : (
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface px-4 py-3">
+          {idea.status === "used" ? (
+            <>
+              <p className="text-sm font-medium text-success">
+                已标记为「已复用」
+              </p>
+              <button
+                type="button"
+                onClick={() => void handleToggleUsed()}
+                disabled={markingUsed}
+                className="rounded-md border border-border px-3 py-1.5 text-sm text-ink-secondary transition-colors hover:bg-fill-soft disabled:opacity-50"
+              >
+                {markingUsed ? "处理中…" : "取消标记"}
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-ink-muted">
+                这条灵感在实际项目里用上了吗？
+              </p>
+              <button
+                type="button"
+                onClick={() => void handleToggleUsed()}
+                disabled={markingUsed}
+                className="rounded-md bg-success px-3 py-1.5 text-sm font-medium text-success-soft transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {markingUsed ? "标记中…" : "标为已复用"}
+              </button>
+            </>
+          )}
+        </section>
+      )}
 
-      {/* 复用档案（T1.1）：从未被 Agent 检索过则不渲染，避免噪音 */}
+      {/* 复用档案（T1.1 + E3）：有首次检索时间时讲沉睡叙事（三段式），
+          老数据（first_retrieved_at 为空）退回账本式两段式，不显示假数字 */}
       {trace && trace.retrieved_count > 0 && (
         <section className="rounded-xl border border-border bg-surface p-5">
           <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
             <h2 className="text-sm font-semibold text-ink-strong">复用档案</h2>
-            <p className="text-xs text-ink-faint">
-              累计被 Agent 检索{" "}
-              <span className="font-medium text-ink-secondary">
-                {trace.retrieved_count}
-              </span>{" "}
-              次
-              {trace.last_retrieved_at &&
-                ` · 最近一次 ${relativeTime(trace.last_retrieved_at)}`}
-            </p>
+            {sleepDays === null && (
+              <p className="text-xs text-ink-faint">
+                累计被 Agent 检索{" "}
+                <span className="font-medium text-ink-secondary">
+                  {trace.retrieved_count}
+                </span>{" "}
+                次
+                {trace.last_retrieved_at &&
+                  ` · 最近一次 ${relativeTime(trace.last_retrieved_at)}`}
+              </p>
+            )}
           </div>
+          {sleepDays !== null && (
+            <div className="mb-3">
+              <p className="text-sm text-ink">
+                {sleepDays === 0 ? (
+                  "写下当天，就被 Agent 找回来"
+                ) : (
+                  <>
+                    写下后的第{" "}
+                    <span className="font-medium text-ink-strong">
+                      {sleepDays}
+                    </span>{" "}
+                    天，被 Agent 找回来
+                  </>
+                )}
+              </p>
+              <p className="mt-0.5 text-xs text-ink-faint">
+                累计 {trace.retrieved_count} 次
+                {trace.last_retrieved_at &&
+                  ` · 最近一次 ${relativeTime(trace.last_retrieved_at)}`}
+              </p>
+            </div>
+          )}
           {trace.events.length > 0 && (
             <ul className="space-y-1.5">
               {trace.events.map((event, index) => (
@@ -366,8 +514,12 @@ export default function IdeaDetailPage() {
         </section>
       )}
 
-      {/* AI 推断 */}
-      <section className="relative rounded-xl border border-primary-soft-hover bg-primary-soft/40 p-5">
+      {/* AI 推断；本次会话内刚完成时整体淡入一次（方案 §4-③） */}
+      <section
+        className={`relative rounded-xl border border-primary-soft-hover bg-primary-soft/40 p-5${
+          aiJustDone ? " remuse-ai-fade" : ""
+        }`}
+      >
         <div className="mb-3 flex items-center gap-2">
           <span className="rounded-md bg-primary px-2 py-0.5 text-xs font-medium text-white">
             AI 推断

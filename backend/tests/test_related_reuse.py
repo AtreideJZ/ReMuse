@@ -63,9 +63,25 @@ async def test_reuse_trace_never_retrieved(client: AsyncClient):
         assert data["status"] == "captured"
         assert data["retrieved_count"] == 0
         assert data["last_retrieved_at"] is None
+        assert data["first_retrieved_at"] is None
         assert data["events"] == []
     finally:
         await pool.execute("DELETE FROM ideas WHERE id = $1", idea_id)
+
+
+async def test_search_near_miss_degraded(client: AsyncClient, monkeypatch):
+    """E7 降级：Embedding 未配置时零结果检索返回 near_miss=None，不报错。"""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "embedding_api_key", "")
+    resp = await client.get(
+        "/api/search/ideas",
+        params={"q": f"绝不存在的词-{uuid.uuid4().hex[:8]}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["items"] == []
+    assert data["near_miss"] is None
 
 
 async def test_reuse_trace_counters(client: AsyncClient):
@@ -91,12 +107,16 @@ async def test_reuse_trace_counters(client: AsyncClient):
         assert data["status"] == "retrieved"
         assert data["retrieved_count"] == 1
         assert data["last_retrieved_at"] is not None
+        # E3：首次检索时间落库
+        assert data["first_retrieved_at"] is not None
+        first_at = data["first_retrieved_at"]
 
-        # 重复检索：状态不变，计数累计递增
+        # 重复检索：状态不变，计数累计递增；首次时间不被覆盖
         await mark_retrieved([idea_id])
         data = (await client.get(f"/api/ideas/{idea_id}/reuse-trace")).json()
         assert data["status"] == "retrieved"
         assert data["retrieved_count"] == 2
+        assert data["first_retrieved_at"] == first_at
 
         # used 终态：计数照记，状态不回退
         await mark_retrieved([used_id])

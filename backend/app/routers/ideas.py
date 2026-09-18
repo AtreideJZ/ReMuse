@@ -208,7 +208,8 @@ async def reuse_trace(idea_id: UUID):
     """
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT status, retrieved_count, last_retrieved_at FROM ideas WHERE id = $1",
+        "SELECT status, retrieved_count, last_retrieved_at, first_retrieved_at "
+        "FROM ideas WHERE id = $1",
         idea_id,
     )
     if row is None:
@@ -224,6 +225,7 @@ async def reuse_trace(idea_id: UUID):
         status=row["status"],
         retrieved_count=row["retrieved_count"],
         last_retrieved_at=row["last_retrieved_at"],
+        first_retrieved_at=row["first_retrieved_at"],
         events=[
             ReuseTraceEvent(
                 at=e["at"], agent_name=e["agent_name"], tool_name=e["tool_name"]

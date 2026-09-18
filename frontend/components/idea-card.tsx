@@ -5,6 +5,15 @@ import { AIStatusBadge } from "./ai-status-badge";
 
 interface IdeaCardProps {
   idea: Idea;
+  /** AI 完成回响（E2）：仅首页对本次会话新建条目传入，一次性展示 */
+  aiEcho?: AiEcho;
+  onRetryAI?: (ideaId: string) => void;
+}
+
+/** E2 回响内容：done 展示 AI 产出的标题；failed 提供重试入口 */
+export interface AiEcho {
+  kind: "done" | "failed";
+  title: string | null;
 }
 
 // 复用状态徽章（T1.2）：只露用户确认过的终态；captured（默认态）与
@@ -16,7 +25,7 @@ const STATUS_BADGES: Partial<
   merged: { label: "已合并", className: "bg-fill text-ink-muted" },
 };
 
-export function IdeaCard({ idea }: IdeaCardProps) {
+export function IdeaCard({ idea, aiEcho, onRetryAI }: IdeaCardProps) {
   const aiDone = idea.ai_status === "done";
   // 记忆锚点是原文：AI 完成时标题用 ai_title 便于扫读、第二行显示原文；
   // 未完成（含失败）时主标题直接显示原文截断
@@ -63,6 +72,41 @@ export function IdeaCard({ idea }: IdeaCardProps) {
           {relativeTime(idea.created_at)}
         </span>
       </div>
+      {/* E2：AI 完成回响（一次性）。重试按钮在 Link 内，须拦截默认跳转 */}
+      {aiEcho && (
+        <div
+          role="status"
+          className="remuse-idea-fade-in mt-3 border-t border-dashed border-border pt-2.5 text-xs text-ink-secondary"
+        >
+          {aiEcho.kind === "done" ? (
+            aiEcho.title ? (
+              <>
+                AI 给它取了个名字：
+                <span className="font-medium text-ink-strong">
+                  「{aiEcho.title}」
+                </span>
+              </>
+            ) : (
+              "AI 读完了这条"
+            )
+          ) : (
+            <>
+              这次没读懂。
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onRetryAI?.(idea.id);
+                }}
+                className="ml-1 text-primary hover:underline"
+              >
+                让它再试一次 →
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </Link>
   );
 }

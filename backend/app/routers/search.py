@@ -4,15 +4,16 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from ..schemas import IdeaOut
+from ..schemas import IdeaOut, SearchIdeaListOut
 from ..services.ratelimit import search_limiter
-from ..services.search import hybrid_search
+from ..services.search import fetch_near_miss, hybrid_search
 from .agent import _fetch_ideas_preserve_order
+from .ideas import _to_out
 
 router = APIRouter(prefix="/search", tags=["search"])
 
 
-@router.get("/ideas", response_model=list[IdeaOut])
+@router.get("/ideas", response_model=SearchIdeaListOut)
 async def search_ideas(
     request: Request,
     q: str,
@@ -29,4 +30,12 @@ async def search_ideas(
     ids = await hybrid_search(
         q, project_id=project_id, tag=tag, since_days=days, limit=limit
     )
-    return await _fetch_ideas_preserve_order(ids)
+    items = await _fetch_ideas_preserve_order(ids)
+    # E7：零结果时补一个无阈值向量近邻，把死路变成活路；
+    # Embedding 未配置/失败时 near_miss 为 None，前端退回原零结果态
+    near_miss: IdeaOut | None = None
+    if not items:
+        rows = await fetch_near_miss(q)
+        if rows:
+            near_miss = _to_out(rows[0])
+    return SearchIdeaListOut(items=items, near_miss=near_miss)

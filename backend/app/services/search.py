@@ -118,6 +118,44 @@ async def hybrid_search(
     return [r["id"] for r in rows]
 
 
+async def fetch_near_miss(query: str, limit: int = 1) -> list:
+    """零结果时的无阈值向量近邻（E7）：返回 _BASE_SELECT 形态的行。
+
+    仅在混合检索零结果后调用，把「没有找到」变成「有点像的」；
+    不带阈值与元数据过滤（它就是放宽条件的那条路），但排除已放弃（dropped）。
+    Embedding 未配置或调用失败时返回空列表（静默降级，不影响零结果态本身）。
+    """
+    query = query.strip()
+    if not query:
+        return []
+    embedder = get_embedder()
+    if not embedder.configured():
+        return []
+    try:
+        vector_literal = to_vector_literal(await embedder.embed(query))
+    except Exception:
+        return []
+
+    # 函数内延迟导入：routers.ideas 与 services.search 互相引用，顶层导入会循环
+    from ..routers.ideas import _BASE_SELECT
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            # 与 hybrid_search 一致：小数据量下近似精确召回
+            await conn.execute("SET LOCAL ivfflat.probes = 100")
+            rows = await conn.fetch(
+                f"{_BASE_SELECT} "
+                "WHERE i.embedding IS NOT NULL AND i.status != 'dropped' "
+                "GROUP BY i.id, p.name "
+                "ORDER BY i.embedding <=> $1::vector "
+                "LIMIT $2",
+                vector_literal,
+                limit,
+            )
+    return rows
+
+
 async def fetch_related_ideas(
     idea_id: UUID,
     limit: int,

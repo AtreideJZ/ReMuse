@@ -61,11 +61,12 @@ export function AgentActivity() {
   if (logs === null) return null;
 
   if (logs.length === 0) {
+    // E5：落点指向设置页（密钥管理/接入指引），而非只会显示「暂无调用记录」的日志页
     return (
       <p className="rounded-xl border border-dashed border-border px-4 py-3 text-sm text-ink-faint">
-        Agent 尚未接入，配置 MCP 后这里会出现活动。
-        <Link href="/logs" className="ml-1 text-primary hover:underline">
-          前往日志页 →
+        Agent 还没接入。接入后，这里会显示它最近找过什么。
+        <Link href="/settings" className="ml-1 text-primary hover:underline">
+          查看接入方法 →
         </Link>
       </p>
     );
