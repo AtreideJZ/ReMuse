@@ -6,6 +6,15 @@
 
 ## [Unreleased]
 
+### 修复（2026-09-19 测试报告）
+
+- **P0：MCP 工具成功返回即会话终止**。`mcp_server.py` 的 `json_response` 由 `True` 改为 `False`（SSE 流式响应）；`json_response=True` 与 `stateless_http=True` 组合下，客户端拿到 structuredContent 后再发 list_tools 校验会撞上已终止的会话，导致 6 个工具的成功路径全部不可用
+- **P2：关闭 API 文档端点**。`/docs` `/redoc` `/openapi.json` 不在 `/api/` 前缀下、绕过管理面认证，已禁用（404）
+- `test_mcp.py` / `scripts/verify_mcp.py` 迁移到 `streamable_http_client`（SDK 1.29 新 API 需自备 `httpx.AsyncClient`）
+- 测试 fixture 加固：`test_search.py` 的 `seeded` 与 `test_mcp.py` 的 `keys` 改为创建与清理全包 try/finally，fixture 中途失败不再留脏数据
+- `test_search.py` 召回断言限定 fixture 项目内（全库绝对排名受存量数据影响，非稳定口径）
+- `scripts/eval_search.py` 适配第三轮检索响应结构（`{items, near_miss}`）
+
 ### 第三轮 UX：趣味体验（2026-09-18 方案）
 
 - 详情页复用确认回执（E1/E9）：「已确认复用 · 第 N 条」+ 写下到用上的时间差分档文案，首次复用额外标注；统计接口失败时回执仍出现（省略数字）

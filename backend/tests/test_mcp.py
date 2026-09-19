@@ -8,11 +8,13 @@ F-010 调用日志写入。
 import asyncio
 import json
 import uuid
+from contextlib import asynccontextmanager
 
+import httpx
 import pytest
 import uvicorn
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 
 pytestmark = pytest.mark.asyncio
 
@@ -42,39 +44,60 @@ async def mcp_url():
 
 @pytest.fixture
 async def keys():
-    """创建只读 / 读写两个 Key，测试后清理（含其调用日志）。"""
+    """创建只读 / 读写两个 Key，测试后清理（含其调用日志）。
+
+    创建与清理都包在 try/finally 里：中途失败（如第二个 INSERT 异常）
+    也不会在库里留下残留 Key（2026-09-19 测试报告 §5.1）。
+    """
     from app.db import get_pool
     from app.services.keys import generate_key
 
     pool = await get_pool()
     created = {}
-    for label, scopes in [("ro", ["read"]), ("rw", ["read", "write"])]:
-        token, prefix, key_hash = generate_key()
-        kid = await pool.fetchval(
-            "INSERT INTO api_keys (name, prefix, key_hash, scopes) "
-            "VALUES ($1, $2, $3, $4) RETURNING id",
-            f"mcp-test-{label}-{uuid.uuid4().hex[:6]}",
-            prefix,
-            key_hash,
-            scopes,
-        )
-        created[label] = {"token": token, "id": kid}
-    yield created
-    await pool.execute(
-        "DELETE FROM agent_call_logs WHERE api_key_id = ANY($1)",
-        [k["id"] for k in created.values()],
-    )
-    await pool.execute(
-        "DELETE FROM api_keys WHERE id = ANY($1)", [k["id"] for k in created.values()]
-    )
+    try:
+        for label, scopes in [("ro", ["read"]), ("rw", ["read", "write"])]:
+            token, prefix, key_hash = generate_key()
+            kid = await pool.fetchval(
+                "INSERT INTO api_keys (name, prefix, key_hash, scopes) "
+                "VALUES ($1, $2, $3, $4) RETURNING id",
+                f"mcp-test-{label}-{uuid.uuid4().hex[:6]}",
+                prefix,
+                key_hash,
+                scopes,
+            )
+            created[label] = {"token": token, "id": kid}
+        yield created
+    finally:
+        if created:
+            ids = [k["id"] for k in created.values()]
+            await pool.execute(
+                "DELETE FROM agent_call_logs WHERE api_key_id = ANY($1)", ids
+            )
+            await pool.execute("DELETE FROM api_keys WHERE id = ANY($1)", ids)
 
 
 def _auth(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
+@asynccontextmanager
+async def _mcp_connect(url: str, token: str | None = None):
+    """携带 Bearer 头建立 MCP 连接。
+
+    streamable_http_client（SDK 1.29 新 API）不再收 headers 参数，
+    需自备 httpx.AsyncClient（调用方管理其生命周期）；
+    显式拉长 read 超时：search 类工具会触发一次远程 Embedding 调用。
+    """
+    headers = _auth(token) if token else {}
+    async with httpx.AsyncClient(
+        headers=headers, timeout=httpx.Timeout(30.0, read=300.0)
+    ) as client:
+        async with streamable_http_client(url, http_client=client) as (r, w, _):
+            yield r, w
+
+
 async def _call(mcp_url, token, tool, arguments):
-    async with streamablehttp_client(mcp_url, headers=_auth(token)) as (r, w, _):
+    async with _mcp_connect(mcp_url, token) as (r, w):
         async with ClientSession(r, w) as session:
             await session.initialize()
             return await session.call_tool(tool, arguments)
@@ -87,11 +110,7 @@ def _payload(result):
 
 
 async def test_list_tools(mcp_url, keys):
-    async with streamablehttp_client(mcp_url, headers=_auth(keys["ro"]["token"])) as (
-        r,
-        w,
-        _,
-    ):
+    async with _mcp_connect(mcp_url, keys["ro"]["token"]) as (r, w):
         async with ClientSession(r, w) as session:
             await session.initialize()
             tools = await session.list_tools()
@@ -167,23 +186,17 @@ async def test_capture_with_write_scope(mcp_url, keys):
 async def test_unauthorized_rejected(mcp_url, keys):
     """AC-F008-02：无 Key / 假 Key 连接即 401。"""
     with pytest.raises(Exception):
-        async with streamablehttp_client(mcp_url) as (r, w, _):
+        async with _mcp_connect(mcp_url) as (r, w):
             async with ClientSession(r, w) as session:
                 await session.initialize()
     with pytest.raises(Exception):
-        async with streamablehttp_client(
-            mcp_url, headers={"Authorization": "Bearer rm_fake"}
-        ) as (r, w, _):
+        async with _mcp_connect(mcp_url, "rm_fake") as (r, w):
             async with ClientSession(r, w) as session:
                 await session.initialize()
 
 
 async def test_resource_recent(mcp_url, keys):
-    async with streamablehttp_client(mcp_url, headers=_auth(keys["ro"]["token"])) as (
-        r,
-        w,
-        _,
-    ):
+    async with _mcp_connect(mcp_url, keys["ro"]["token"]) as (r, w):
         async with ClientSession(r, w) as session:
             await session.initialize()
             res = await session.read_resource("ideas://recent")

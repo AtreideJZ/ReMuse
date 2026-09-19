@@ -259,6 +259,7 @@ API_ORIGIN=http://localhost:8001 npm run dev
 - **调用日志即审计**：MCP 与 REST Agent 接口的每次调用（含越权 `denied` 尝试）都写入 `agent_call_logs`；读取失败对内区分「越权访问」（denied）与「不存在」（error），对外统一「无权限或不存在」不泄露存在性；默认保留 90 天（`AGENT_LOG_RETENTION_DAYS` 可配）。
 - **速率限制**：写入/检索/导出端点滑窗限流（防 LLM 计费放大与 DoS），429 拒绝。
 - **安全响应头**：API（X-Content-Type-Options / X-Frame-Options / Referrer-Policy，HSTS 按 `ENABLE_HSTS` 开关）与 Web（next.config.ts 含 CSP，Next 水合需 `script-src 'unsafe-inline'`）。
+- **API 文档端点关闭**：`/docs` / `/redoc` / `/openapi.json` 未启用（它们不在 `/api/` 前缀下，会绕过管理面认证；`main.py` 中 `docs_url=None` 等）。恢复前必须先解决认证问题。
 - **配置层 SSRF 防护**：`LLM_BASE_URL`/`EMBEDDING_BASE_URL` 启动时校验 scheme 并默认拒绝私网/回环地址（本地网关用 `ALLOW_PRIVATE_BASE_URL=true` 显式放行）。
 - **数据库不出内网**：5432 仅绑定 127.0.0.1；`POSTGRES_PASSWORD` 必填无默认值。
 - **MCP 无删除能力**：任何 Agent 都无法删除或改写灵感，删除权限永不开放。
@@ -280,6 +281,8 @@ API_ORIGIN=http://localhost:8001 npm run dev
 - 修改 Embedding 模型或维度时，必须同步修改 `.env.example` / `.env` 的 `EMBEDDING_DIM`，并重建 `ideas.embedding` 列与 IVFFlat 索引。
 - 修改前端 API rewrite 目标时，必须重新构建前端 Docker 镜像；仅改环境变量不生效。
 - 修改 MCP 工具/资源的签名或行为时，必须同步 `backend/tests/test_mcp.py` 与 `docs/MCP接入指南.md`。
+- **`mcp_server.py` 的 `json_response` 必须保持 `False`**：`True` 与 `stateless_http=True` 组合会让「成功返回结果」的工具调用全部会话终止（客户端拿到 structuredContent 后再发 list_tools 校验时撞上已结束的会话；2026-09-19 测试报告 §2）。MCP 客户端代码用 `streamable_http_client`（SDK 1.29+），它不收 `headers`，需自备 `httpx.AsyncClient`（参考 `scripts/verify_mcp.py`）。
+- 检索测试断言限定在 fixture 自己的项目内（`project_id`）：全库绝对排名受存量数据影响，不是稳定口径。
 - 修改 `db/Dockerfile` 中的 scws / zhparser 版本时，必须同步更新对应 SHA-256 校验和与根目录 `NOTICE` 的归属声明。
 - 写测试时优先覆盖边界与安全场景（scope、越权、降级）。
 - 不要在前端页面组件中直接写服务端逻辑；页面均为 Client Component，API 调用走 `lib/api.ts`。

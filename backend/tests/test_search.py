@@ -43,62 +43,77 @@ async def _ctx():
 async def seeded():
     pool, client = await _ctx()
 
-    pid = await pool.fetchval(
-        "INSERT INTO projects (name) VALUES ($1) RETURNING id",
-        f"检索测试项目-{uuid.uuid4().hex[:6]}",
-    )
-    target_id = await pool.fetchval(
-        "INSERT INTO ideas (raw_content, project_id, ai_status) VALUES ($1, $2, 'done') RETURNING id",
-        TARGET_SEMANTIC,
-        pid,
-    )
-    kw_id = await pool.fetchval(
-        "INSERT INTO ideas (raw_content, project_id, ai_status) VALUES ($1, $2, 'done') RETURNING id",
-        TARGET_KEYWORD,
-        pid,
-    )
-    filler_ids = []
-    for content in FILLERS:
-        fid = await pool.fetchval(
-            "INSERT INTO ideas (raw_content, ai_status) VALUES ($1, 'done') RETURNING id",
-            content,
+    # 创建与清理都包在 try/finally 里：backfill 失败（pytest.fail 发生在
+    # yield 之前，yield 后置清理不会执行）也不能在库里留残留（§5.1）
+    pid = None
+    idea_ids: list = []
+    try:
+        pid = await pool.fetchval(
+            "INSERT INTO projects (name) VALUES ($1) RETURNING id",
+            f"检索测试项目-{uuid.uuid4().hex[:6]}",
         )
-        filler_ids.append(fid)
-
-    from app.services.structuring import backfill_embeddings
-
-    for _ in range(3):
-        await backfill_embeddings()
-        missing = await pool.fetchval(
-            "SELECT COUNT(*) FROM ideas WHERE id = ANY($1) AND embedding IS NULL",
-            [target_id, kw_id, *filler_ids],
+        target_id = await pool.fetchval(
+            "INSERT INTO ideas (raw_content, project_id, ai_status) VALUES ($1, $2, 'done') RETURNING id",
+            TARGET_SEMANTIC,
+            pid,
         )
-        if missing == 0:
-            break
-    else:
-        pytest.fail("embedding 回填失败")
+        kw_id = await pool.fetchval(
+            "INSERT INTO ideas (raw_content, project_id, ai_status) VALUES ($1, $2, 'done') RETURNING id",
+            TARGET_KEYWORD,
+            pid,
+        )
+        idea_ids.extend([target_id, kw_id])
+        for content in FILLERS:
+            fid = await pool.fetchval(
+                "INSERT INTO ideas (raw_content, ai_status) VALUES ($1, 'done') RETURNING id",
+                content,
+            )
+            idea_ids.append(fid)
 
-    yield client, pid, target_id, kw_id
+        from app.services.structuring import backfill_embeddings
 
-    # 清理
-    await pool.execute("DELETE FROM projects WHERE id = $1", pid)
-    await pool.execute("DELETE FROM ideas WHERE id = ANY($1)", [target_id, kw_id, *filler_ids])
-    await client.aclose()
+        for _ in range(3):
+            await backfill_embeddings()
+            missing = await pool.fetchval(
+                "SELECT COUNT(*) FROM ideas WHERE id = ANY($1) AND embedding IS NULL",
+                idea_ids,
+            )
+            if missing == 0:
+                break
+        else:
+            pytest.fail("embedding 回填失败")
+
+        yield client, pid, target_id, kw_id
+    finally:
+        if pid is not None:
+            await pool.execute("DELETE FROM projects WHERE id = $1", pid)
+        if idea_ids:
+            await pool.execute("DELETE FROM ideas WHERE id = ANY($1)", idea_ids)
+        await client.aclose()
 
 
 async def test_semantic_recall(seeded):
-    """AC-F005-01：语义查询「学生学习计划」，目标进前 5。"""
-    client, _, target_id, _ = seeded
-    resp = await client.get("/api/search/ideas", params={"q": "学生学习计划"})
+    """AC-F005-01：语义查询「学生学习计划」，目标排第 1。
+
+    限定在 fixture 自己的项目内断言：全库检索的绝对排名受存量数据影响
+    （真实灵感可能与目标语义相近），不是稳定的验收口径（§3.1 修复）。
+    """
+    client, pid, target_id, kw_id = seeded
+    resp = await client.get(
+        "/api/search/ideas", params={"q": "学生学习计划", "project_id": str(pid)}
+    )
     assert resp.status_code == 200
     ids = [i["id"] for i in resp.json()["items"]]
-    assert str(target_id) in ids[:5], f"目标未进前 5: {ids[:5]}"
+    assert ids and ids[0] == str(target_id), f"目标未排第 1: {ids[:5]}"
+    assert str(kw_id) in ids, "同项目另一条也应被召回（向量侧无阈值）"
 
 
 async def test_keyword_exact(seeded):
-    """AC-F005-02：精确术语「pgvector」排第 1。"""
-    client, _, _, kw_id = seeded
-    resp = await client.get("/api/search/ideas", params={"q": "pgvector"})
+    """AC-F005-02：精确术语「pgvector」排第 1（同样限定 fixture 项目内）。"""
+    client, pid, _, kw_id = seeded
+    resp = await client.get(
+        "/api/search/ideas", params={"q": "pgvector", "project_id": str(pid)}
+    )
     ids = [i["id"] for i in resp.json()["items"]]
     assert ids and ids[0] == str(kw_id)
 

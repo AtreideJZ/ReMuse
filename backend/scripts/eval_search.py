@@ -37,7 +37,7 @@ def main() -> int:
             timeout=60,
         )
         resp.raise_for_status()
-        top = [h["raw_content"] for h in resp.json()]
+        top = [h["raw_content"] for h in resp.json()["items"]]
 
         first_rank = next(
             (i for i, c in enumerate(top, 1) if any(r in c for r in relevant)), None

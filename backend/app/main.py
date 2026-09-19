@@ -46,7 +46,16 @@ async def lifespan(app: FastAPI):
         await close_pool()
 
 
-app = FastAPI(title="ReMuse 溯游 API", lifespan=lifespan)
+# docs/redoc/openapi 不在 /api/ 前缀下，会绕过 AdminAuthMiddleware：
+# api 绑 0.0.0.0（Agent 可能在其他设备），局域网内即暴露完整 API 结构，直接关闭
+#（2026-09-19 测试报告 §5.2）
+app = FastAPI(
+    title="ReMuse 溯游 API",
+    lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 
 
 @app.exception_handler(PermissionError)
